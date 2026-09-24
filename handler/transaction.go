@@ -29,13 +29,16 @@ func CreateEvent(c *gin.Context) {
 		RemainingTickets: input.TotalCapacity,
 	}
 
-	initializers.DB.Create(&event)
+	if err := initializers.DB.Create(&event).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create event"})
+		return
+	}
 	c.JSON(200, gin.H{"message": "Event created successfully", "event": event})
 }
 
 func BookTransaction(c *gin.Context) {
 	var get struct {
-		UserTicket uint `json:"user_ticket"`
+		UserTicket uint `json:"user_ticket" binding:"required,gt=0"`
 	}
 
 	if err := c.ShouldBindJSON(&get); err != nil {
@@ -43,9 +46,21 @@ func BookTransaction(c *gin.Context) {
 		return
 	}
 
+	userSession, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	currentUser, ok := userSession.(*model.User)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to resolve user session"})
+		return
+	}
+
+	var book model.Event
 	// Basic transaction
 	err := initializers.DB.Transaction(func(tx *gorm.DB) error {
-		var book model.Event
+
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, 1).Error; err != nil {
 			return err
 		}
@@ -59,9 +74,6 @@ func BookTransaction(c *gin.Context) {
 			return err
 		}
 
-		userSession, _ := c.Get("user")
-		currentUser := userSession.(*model.User)
-
 		booking := model.Work{
 			Ticket: get.UserTicket,
 			UserID: currentUser.ID,
@@ -70,8 +82,6 @@ func BookTransaction(c *gin.Context) {
 			return err
 		}
 
-		go service.SendTicket(currentUser.Email, book.Title, book.Date, get.UserTicket)
-
 		return nil
 	})
 
@@ -79,6 +89,8 @@ func BookTransaction(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	go service.SendTicket(currentUser.Email, book.Title, book.Date, get.UserTicket)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tickets booked successfully!"})
 }

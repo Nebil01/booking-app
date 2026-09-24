@@ -17,7 +17,7 @@ func Register(c *gin.Context) {
 	var body struct {
 		FirstName string `json:"first_name" binding:"required,min=2"`
 		LastName  string `json:"last_name" binding:"required,min=2"`
-		Email     string `json:"email"`
+		Email     string `json:"email" binding:"required,email"`
 		Password  string `json:"password" binding:"required,min=8"`
 	}
 
@@ -30,18 +30,6 @@ func Register(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "failed to hash the password",
-		})
-		return
-	}
-
-	isValid := func(cond bool) bool {
-		return cond
-	}
-	isValidEmail := isValid(strings.Contains(body.Email, "@") && strings.Contains(body.Email, "."))
-
-	if !isValidEmail {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Your email doesn't contain @ or . sign.",
 		})
 		return
 	}
@@ -110,18 +98,15 @@ func Login(c *gin.Context) {
 	}
 
 	var user model.User
-	initializers.DB.First(&user, "email = ?", body.Email)
-	if user.ID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid Email",
-		})
+	if err := initializers.DB.First(&user, "email = ?", body.Email).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email or password"})
 		return
 	}
 
 	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid Password",
+			"error": "Invalid email or password",
 		})
 		return
 	}

@@ -1,121 +1,64 @@
 package main
 
 import (
-	"fmt"
-	"sync"
+	"booking-app/handler"
+	"booking-app/initializers"
+	"booking-app/service"
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
-var conferenceName = "Go Conference"
-
-const conferenceTickets = 50
-
-var remainingTickets uint = 50
-var bookings = make([]UserData, 0)
-
-type UserData struct {
-	firstName       string
-	lastName        string
-	email           string
-	numberOfTickets uint
+func init() {
+	initializers.LoadEnvVariable()
+	initializers.Database()
+	initializers.SyncDb()
 }
-
-var wg = sync.WaitGroup{}
 
 func main() {
 
-	greetUsers()
+	r := gin.Default()
 
-	firstName, lastName, userTickets, email := getUserInput()
-	isValidName, isValidEmail, isValidTicketsNumber := validateUserInput(firstName, lastName, email, userTickets, remainingTickets)
+	limiter := service.NewRateLimiter(60, time.Minute)
+	r.Use(limiter.LimitMiddleWare())
+	loginLimiter := service.NewRateLimiter(3, time.Minute)
 
-	if isValidName && isValidEmail && isValidTicketsNumber {
+	r.POST("/user", handler.Register)
+	r.POST("/login", loginLimiter.LimitMiddleWareWithMessage("Too many login attempts. Please wait a minute and try again."), handler.Login)
+	r.POST("/event", handler.CreateEvent)
+	r.POST("/book", handler.RequireAuth, handler.BookTransaction)
+	r.GET("/event/:id", handler.GetEvent)
+	r.GET("/validate", handler.RequireAuth, handler.Validate)
 
-		bookTicket(userTickets, firstName, lastName, email)
-
-		wg.Add(1)
-		go sendTicket(userTickets, firstName, lastName, email)
-
-		firstNames := getFirstNames()
-		fmt.Printf("The first name of bookings are: %v.\n", firstNames)
-
-		if remainingTickets == 0 {
-			fmt.Println("Our Conference is booked out.")
-			//break
-		}
-	} else {
-		if !isValidName {
-			fmt.Println("Your first name or last name you entered is too short.")
-		}
-		if !isValidEmail {
-			fmt.Println("Your email doesn't contain @ sign.")
-		}
-		if !isValidTicketsNumber {
-			fmt.Println("Number of tickets you entered is invalid")
-		}
-	}
-	wg.Wait()
-}
-
-func greetUsers() {
-	fmt.Printf("Welcome to %v booking application.\n", conferenceName)
-	fmt.Printf("We have total of %v tickets and %v are still available.\n", conferenceTickets, remainingTickets)
-	fmt.Println("Get your tickets here to attend.")
-}
-
-func getFirstNames() []string {
-	firstNames := []string{}
-	for _, booking := range bookings {
-		firstNames = append(firstNames, booking.firstName)
-	}
-	return firstNames
-}
-
-func getUserInput() (string, string, uint, string) {
-	var firstName string
-	var lastName string
-	var userTickets uint
-	var email string
-
-	// Ask user their info
-
-	fmt.Print("Enter your first name:\n")
-	fmt.Scan(&firstName)
-
-	fmt.Print("Enter your last name:\n")
-	fmt.Scan(&lastName)
-
-	fmt.Print("Enter number of tickets:\n")
-	fmt.Scan(&userTickets)
-
-	fmt.Print("Enter your email address:\n")
-	fmt.Scan(&email)
-
-	return firstName, lastName, userTickets, email
-}
-
-func bookTicket(userTickets uint, firstName string, lastName string, email string) {
-	remainingTickets -= userTickets
-
-	var userData = UserData{
-		firstName:       firstName,
-		lastName:        lastName,
-		email:           email,
-		numberOfTickets: userTickets,
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
 	}
 
-	bookings = append(bookings, userData)
-	fmt.Printf("List of all bookings are: %v\n", bookings)
+	go func() {
+		log.Println("Starting server on :8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Listen error: %s", err)
+		}
+	}()
 
-	fmt.Printf("Thank you %v %v for booking %v tickets. You will receive a confirmation email at %v.\n", firstName, lastName, userTickets, email)
-	fmt.Printf("%v tickets remaining for %v.\n", remainingTickets, conferenceName)
-}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutdown signal received")
 
-func sendTicket(userTickets uint, firstName string, lastName string, email string) {
-	time.Sleep(5 * time.Second)
-	var ticket = fmt.Sprintf("%v tickets for %v %v", userTickets, firstName, lastName)
-	fmt.Println("##################")
-	fmt.Printf("Sending ticket:\n %v \nto email address %v.\n", ticket, email)
-	fmt.Println("##################")
-	wg.Done()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Forced shutdown: %s", err)
+	}
+
+	log.Println("Server exited gracefully")
 }

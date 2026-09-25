@@ -33,6 +33,7 @@ func main() {
 	r.POST("/login", loginLimiter.LimitMiddleWareWithMessage("Too many login attempts. Please wait a minute and try again."), handler.Login)
 	r.POST("/event", handler.CreateEvent)
 	r.POST("/book", handler.RequireAuth, handler.BookTransaction)
+	r.GET("/my-tickets", handler.RequireAuth, handler.GetTicket)
 	r.GET("/event/:id", handler.GetEvent)
 	r.GET("/validate", handler.RequireAuth, handler.Validate)
 

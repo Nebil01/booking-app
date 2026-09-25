@@ -13,8 +13,8 @@ type User struct {
 
 type Work struct {
 	gorm.Model
-	Ticket uint
-	UserID uint
+	Ticket   uint
+	TicketID uint
 }
 
 type Event struct {

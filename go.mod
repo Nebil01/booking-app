@@ -46,6 +46,7 @@ require (
 )
 
 require (
+	github.com/boombuler/barcode v1.1.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/jinzhu/inflection v1.0.0 // indirect

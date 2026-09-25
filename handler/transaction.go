@@ -25,6 +25,7 @@ func CreateEvent(c *gin.Context) {
 
 	event := model.Event{
 		Title:            input.Title,
+		Date:             input.Date,
 		TotalCapacity:    input.TotalCapacity,
 		RemainingTickets: input.TotalCapacity,
 	}
@@ -58,6 +59,11 @@ func BookTransaction(c *gin.Context) {
 	}
 
 	var book model.Event
+
+	booking := model.Work{
+		Ticket:   get.UserTicket,
+		TicketID: currentUser.ID,
+	}
 	// Basic transaction
 	err := initializers.DB.Transaction(func(tx *gorm.DB) error {
 
@@ -74,10 +80,6 @@ func BookTransaction(c *gin.Context) {
 			return err
 		}
 
-		booking := model.Work{
-			Ticket: get.UserTicket,
-			UserID: currentUser.ID,
-		}
 		if err := tx.Create(&booking).Error; err != nil {
 			return err
 		}
@@ -90,9 +92,34 @@ func BookTransaction(c *gin.Context) {
 		return
 	}
 
-	go service.SendTicket(currentUser.Email, book.Title, book.Date, get.UserTicket)
+	go service.SendTicket(currentUser.Email, book.Title, book.Date, get.UserTicket, booking.ID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Tickets booked successfully!"})
+}
+
+func GetTicket(c *gin.Context) {
+	var mine []model.Work
+	rawUserID, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User context not found"})
+		return
+	}
+	user, ok := rawUserID.(*model.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session format"})
+		return
+	}
+
+	if err := initializers.DB.Preload("event").Where("user_id = ?", user.ID).Find(&mine).Error; err != nil {
+		c.JSON(500, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tickets": mine,
+	})
 }
 
 func GetEvent(c *gin.Context) {

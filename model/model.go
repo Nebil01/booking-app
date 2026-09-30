@@ -9,6 +9,7 @@ type User struct {
 	LastName  string
 	Email     string
 	Password  string
+	Role      string `json:"role" gorm:"default:'user'"`
 }
 
 type Work struct {

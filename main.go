@@ -22,6 +22,7 @@ func init() {
 }
 
 func main() {
+	initializers.SeedAdmin()
 
 	r := gin.Default()
 
@@ -31,11 +32,23 @@ func main() {
 
 	r.POST("/user", handler.Register)
 	r.POST("/login", loginLimiter.LimitMiddleWareWithMessage("Too many login attempts. Please wait a minute and try again."), handler.Login)
-	r.POST("/event", handler.CreateEvent)
-	r.POST("/book", handler.RequireAuth, handler.BookTransaction)
-	r.GET("/my-tickets", handler.RequireAuth, handler.GetTicket)
-	r.GET("/event/:id", handler.GetEvent)
 	r.GET("/validate", handler.RequireAuth, handler.Validate)
+	r.GET("/get-events", handler.GetEvent)
+
+	userGroup := r.Group("/")
+	userGroup.Use(handler.RequireAuth)
+	{
+		userGroup.POST("/book", handler.BookTransaction)
+		userGroup.GET("/my-tickets", handler.GetTicket)
+	}
+
+	adminGroup := r.Group("/admin")
+	adminGroup.Use(handler.RequireAuth, handler.RequireAdmin)
+	{
+		adminGroup.POST("/events", handler.CreateEvent)
+		adminGroup.PUT("/events/:id", handler.UpdateEvent)
+		adminGroup.DELETE("/events/:id", handler.DeleteEvent)
+	}
 
 	srv := &http.Server{
 		Addr:    ":8080",

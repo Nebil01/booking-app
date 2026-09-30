@@ -69,3 +69,21 @@ func RequireAuth(c *gin.Context) {
 	c.Set("userID", userID)
 	c.Next()
 }
+
+func RequireAdmin(c *gin.Context) {
+	userSession, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		c.Abort()
+		return
+	}
+
+	user, ok := userSession.(*model.User)
+	if !ok || user.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Access denied: Admins only"})
+		c.Abort()
+		return
+	}
+
+	c.Next()
+}

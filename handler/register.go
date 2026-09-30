@@ -40,6 +40,7 @@ func Register(c *gin.Context) {
 		LastName:  body.LastName,
 		Email:     body.Email,
 		Password:  string(hash),
+		Role:      "user",
 	}
 	result := initializers.DB.Create(&user)
 	if result.Error != nil {

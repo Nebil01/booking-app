@@ -12,31 +12,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func CreateEvent(c *gin.Context) {
-	var input struct {
-		Title         string `json:"title"`
-		Date          string `json:"date"`
-		TotalCapacity uint   `json:"total_capacity"`
-	}
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(400, gin.H{"error": "Invalid payload"})
-		return
-	}
-
-	event := model.Event{
-		Title:            input.Title,
-		Date:             input.Date,
-		TotalCapacity:    input.TotalCapacity,
-		RemainingTickets: input.TotalCapacity,
-	}
-
-	if err := initializers.DB.Create(&event).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create event"})
-		return
-	}
-	c.JSON(200, gin.H{"message": "Event created successfully", "event": event})
-}
-
 func BookTransaction(c *gin.Context) {
 	var get struct {
 		UserTicket uint `json:"user_ticket" binding:"required,gt=0"`
@@ -99,6 +74,28 @@ func BookTransaction(c *gin.Context) {
 
 func GetTicket(c *gin.Context) {
 	var mine []model.Work
+	id := c.Param("id")
+	rawUserID, _ := c.Get("user")
+	user, ok := rawUserID.(model.User)
+	if !ok {
+		c.JSON(401, gin.H{
+			"error": "failed to retrieve user from context",
+		})
+		return
+	}
+	userID := user.ID
+	if err := initializers.DB.Where("id = ? AND user_ID = ?", id, userID).First(&mine).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"task": mine,
+	})
+}
+
+func GetEvent(c *gin.Context) {
+	var remaining model.Event
 	rawUserID, exists := c.Get("user")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User context not found"})
@@ -110,26 +107,13 @@ func GetTicket(c *gin.Context) {
 		return
 	}
 
-	if err := initializers.DB.Preload("event").Where("user_id = ?", user.ID).Find(&mine).Error; err != nil {
+	if err := initializers.DB.Preload("event").Where("user_id = ?", user.ID).Find(&remaining).Error; err != nil {
 		c.JSON(500, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"tickets": mine,
-	})
-}
-
-func GetEvent(c *gin.Context) {
-	id := c.Param("id")
-	var remaining model.Event
-
-	if err := initializers.DB.First(&remaining, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Event not found"})
-		return
-	}
 	c.JSON(http.StatusOK, gin.H{
 		"event_title":       remaining.Title,
 		"total_capacity":    remaining.TotalCapacity,

@@ -61,8 +61,8 @@ func BookTransaction(c *gin.Context) {
 	var book model.Event
 
 	booking := model.Work{
-		Ticket:   get.UserTicket,
-		TicketID: currentUser.ID,
+		Ticket: get.UserTicket,
+		UserID: currentUser.ID,
 	}
 	// Basic transaction
 	err := initializers.DB.Transaction(func(tx *gorm.DB) error {

@@ -15,6 +15,7 @@ import (
 func BookTransaction(c *gin.Context) {
 	var get struct {
 		UserTicket uint `json:"user_ticket" binding:"required,gt=0"`
+		EventID    uint `json:"event_id" binding:"required,gt=0"`
 	}
 
 	if err := c.ShouldBindJSON(&get); err != nil {
@@ -36,13 +37,14 @@ func BookTransaction(c *gin.Context) {
 	var book model.Event
 
 	booking := model.Work{
-		Ticket: get.UserTicket,
-		UserID: currentUser.ID,
+		Ticket:  get.UserTicket,
+		UserID:  currentUser.ID,
+		EventID: get.EventID,
 	}
 	// Basic transaction
 	err := initializers.DB.Transaction(func(tx *gorm.DB) error {
 
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, 1).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&book, get.EventID).Error; err != nil {
 			return err
 		}
 
@@ -73,10 +75,10 @@ func BookTransaction(c *gin.Context) {
 }
 
 func GetTicket(c *gin.Context) {
-	var mine []model.Work
+	var ticket model.Work
 	id := c.Param("id")
 	rawUserID, _ := c.Get("user")
-	user, ok := rawUserID.(model.User)
+	user, ok := rawUserID.(*model.User)
 	if !ok {
 		c.JSON(401, gin.H{
 			"error": "failed to retrieve user from context",
@@ -84,39 +86,44 @@ func GetTicket(c *gin.Context) {
 		return
 	}
 	userID := user.ID
-	if err := initializers.DB.Where("id = ? AND user_ID = ?", id, userID).First(&mine).Error; err != nil {
+	if err := initializers.DB.Preload("Event").Where("id = ? AND user_id = ?", id, userID).First(&ticket).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"task": mine,
+		"ticket": ticket,
 	})
 }
 
-func GetEvent(c *gin.Context) {
-	var remaining model.Event
-	rawUserID, exists := c.Get("user")
+func GetMyTickets(c *gin.Context) {
+	rawUser, exists := c.Get("user")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User context not found"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
-	user, ok := rawUserID.(*model.User)
+
+	user, ok := rawUser.(*model.User)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session format"})
 		return
 	}
 
-	if err := initializers.DB.Preload("event").Where("user_id = ?", user.ID).Find(&remaining).Error; err != nil {
-		c.JSON(500, gin.H{
-			"error": err.Error(),
-		})
+	var tickets []model.Work
+	if err := initializers.DB.Preload("Event").Where("user_id = ?", user.ID).Order("created_at DESC").Find(&tickets).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tickets"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"event_title":       remaining.Title,
-		"total_capacity":    remaining.TotalCapacity,
-		"remaining_tickets": remaining.RemainingTickets,
-	})
+	c.JSON(http.StatusOK, gin.H{"tickets": tickets})
+}
+
+func GetAllEvents(c *gin.Context) {
+	var events []model.Event
+	if err := initializers.DB.Order("date ASC").Find(&events).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load events"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"events": events})
 }

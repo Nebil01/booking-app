@@ -14,6 +14,11 @@ import (
 )
 
 func RequireAuth(c *gin.Context) {
+	if c.Request.Method == http.MethodOptions {
+		c.Next()
+		return
+	}
+
 	tokenString, err := c.Cookie("Authorization")
 	if err != nil || tokenString == "" {
 		tokenString = strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))

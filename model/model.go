@@ -14,8 +14,10 @@ type User struct {
 
 type Work struct {
 	gorm.Model
-	Ticket uint
-	UserID uint
+	Ticket  uint
+	UserID  uint
+	EventID uint
+	Event   Event `json:"event"`
 }
 
 type Event struct {

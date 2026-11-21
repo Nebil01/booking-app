@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,25 +27,44 @@ func main() {
 
 	r := gin.Default()
 
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost:3001",
+			"http://127.0.0.1:3001",
+		},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
 	limiter := service.NewRateLimiter(60, time.Minute)
 	r.Use(limiter.LimitMiddleWare())
 	loginLimiter := service.NewRateLimiter(3, time.Minute)
 
-	r.POST("/user", handler.Register)
+	r.POST("/register", handler.Register)
 	r.POST("/login", loginLimiter.LimitMiddleWareWithMessage("Too many login attempts. Please wait a minute and try again."), handler.Login)
 	r.GET("/validate", handler.RequireAuth, handler.Validate)
-	r.GET("/get-events", handler.GetEvent)
+	r.GET("/events", handler.GetAllEvents)
 
 	userGroup := r.Group("/")
 	userGroup.Use(handler.RequireAuth)
 	{
 		userGroup.POST("/book", handler.BookTransaction)
-		userGroup.GET("/my-tickets", handler.GetTicket)
+		userGroup.GET("/my-tickets", handler.GetMyTickets)
+		userGroup.GET("/my-tickets/:id", handler.GetTicket)
 	}
 
 	adminGroup := r.Group("/admin")
 	adminGroup.Use(handler.RequireAuth, handler.RequireAdmin)
 	{
+		adminGroup.GET("/users", handler.ListUsers)
+		adminGroup.POST("/users", handler.CreateUser)
+		adminGroup.PUT("/users/:id", handler.UpdateUser)
+		adminGroup.DELETE("/users/:id", handler.DeleteUser)
 		adminGroup.POST("/events", handler.CreateEvent)
 		adminGroup.PUT("/events/:id", handler.UpdateEvent)
 		adminGroup.DELETE("/events/:id", handler.DeleteEvent)
